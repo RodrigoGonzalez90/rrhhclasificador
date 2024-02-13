@@ -1,0 +1,2 @@
+# rrhhclasificador
+Clasificacion por afinidad
