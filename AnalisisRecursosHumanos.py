@@ -9,13 +9,55 @@ from sklearn.metrics import silhouette_score
 import matplotlib.pyplot as plt
 import plotly.graph_objs as go
 from scipy.stats import norm
+from google.oauth2.credentials import Credentials
+from googleapiclient.discovery import build
+from google.oauth2 import service_account
+
+SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
+# KEY = 'credenciales/key.json'
+KEY = st.secrets["google_sheets_creds"] 
+SPREADSHEET_ID = '1VmL3MzzXOCarN9YRpHRCVdowd1jUR51SmLGxHH_K1Aw'
+
+creds = service_account.Credentials.from_service_account_file(KEY, scopes=SCOPES)
+service = build('sheets', 'v4', credentials=creds)
+
+# Define la función para obtener los datos de la hoja de cálculo
+def get_sheet_data(service, spreadsheet_id, range_name):
+    # Llama al método values().get para obtener los datos de la hoja de cálculo
+    sheet = service.spreadsheets()
+    result = sheet.values().get(spreadsheetId=spreadsheet_id, range=range_name).execute()
+    values = result.get('values', [])
+    return values
+
+# Define el rango de celdas que deseas leer
+range_name = "'Hoja 1'!C1:AE"  # Por ejemplo, lee desde la celda A1 hasta la columna E (ajusta el rango según tus necesidades)
+# Llama a la función para obtener los datos
+sheet_data = get_sheet_data(service, SPREADSHEET_ID, range_name)
+# Convierte los datos en un DataFrame de Pandas
+df_sheet = pd.DataFrame(sheet_data[1:], columns=sheet_data[0])
+# Define el rango de celdas que deseas leer 
+range_name_puestos = "'Hoja 3'!A1:Z"  # Por ejemplo, lee desde la celda A1 hasta la columna E (ajusta el rango según tus necesidades)
+# Llama a la función para obtener los datos
+sheet_data_puestos = get_sheet_data(service, SPREADSHEET_ID, range_name_puestos)
+# Convierte los datos en un DataFrame de Pandas
+df_sheet_puestos = pd.DataFrame(sheet_data_puestos[1:], columns=sheet_data_puestos[0])
+# Define el rango de celdas que deseas leer 
+range_name_preguntas = "'Respuestas de formulario 1'!G1:EA"  # Por ejemplo, lee desde la celda A1 hasta la columna E (ajusta el rango según tus necesidades)
+# Llama a la función para obtener los datos
+sheet_data_preguntas = get_sheet_data(service, SPREADSHEET_ID, range_name_preguntas)
+# Convierte los datos en un DataFrame de Pandas
+df_sheet_preguntas = pd.DataFrame(sheet_data_preguntas[1:], columns=sheet_data_preguntas[0])
 
 # Carga los datos y realiza el análisis
 # Aquí puedes poner tu código de análisis
-empleados = pd.read_excel('Empleados.xlsx')
-areas_oficina = pd.read_excel('AreasOficina.xlsx')
+# empleados = pd.read_excel('Empleados.xlsx')
+empleados = df_sheet.loc[df_sheet.iloc[:, 0] != "-"]
+empleados['Edad'] = empleados['Edad'].astype(int)
+empleados['Experiencia (años)'] = empleados['Experiencia (años)'].astype(int)
+# areas_oficina = pd.read_excel('AreasOficina.xlsx')
+areas_oficina = df_sheet_puestos 
 # Calcular el producto punto entre los valores de cada empleado/líder y los valores de las áreas de trabajo
-producto_punto = empleados.iloc[:, 5:].dot(areas_oficina.iloc[:, 1:].T)
+producto_punto = empleados.iloc[:, 4:].astype(int).dot(areas_oficina.iloc[:, 1:].astype(int).T)
 
 # Iterar sobre cada área de trabajo y sus valores de índice
 for index, area_trabajo in enumerate(areas_oficina['Área de trabajo']):
@@ -26,8 +68,10 @@ for index, area_trabajo in enumerate(areas_oficina['Área de trabajo']):
 
 # Calcular el producto punto entre los valores de cada empleado/líder y los valores de las áreas de trabajo
 producto_punto = empleados.iloc[:,-5:]
+
 # Rango de número de clusters a probar
-rangos_clusters = range(2, 11)
+n_samples = len(producto_punto)
+rangos_clusters = range(2, min(n_samples, 11))
 # Almacenar las puntuaciones de silueta y la inercia
 puntuaciones_silueta = []
 inercias = []
@@ -67,9 +111,15 @@ cluster_labels = kmeans.fit_predict(empleados.iloc[:,-5:])
 # Agregar las etiquetas de cluster al DataFrame original
 empleados['Cluster'] = cluster_labels
 empleados['Cluster'] = empleados['Cluster'].astype(str)
+ 
+# Obtener los valores únicos de la columna 'Area_de_trabajo'
+areas_trabajo_unique = areas_oficina['Área de trabajo'].unique()
 
-# Mapear los valores de los clusters a colores específicos
-color_map = {"Facturación": 'red', "Sistemas": 'blue', "Producción": 'green', "Mantenimiento": 'yellow', "Recursos humanos": 'purple'}
+# Definir los colores específicos para cada área de trabajo
+colores = ['red', 'blue', 'green', 'yellow', 'purple', 'cyan', 'magenta', 'orange', 'lightgreen', 'lightblue', 'pink', 'brown', 'gray', 'black']
+
+# Crear el diccionario de mapeo de colores
+color_map = dict(zip(areas_trabajo_unique, colores))
 
 # Crear una nueva columna 'Color' en tu DataFrame que contenga los colores correspondientes a cada cluster
 empleados['Color'] = empleados['Área de trabajo'].map(color_map)
@@ -170,37 +220,37 @@ empleados['Dispersión Producto Punto'] = dispersion_producto_punto
 empleados['Porc. de dispersion respecto de la media'] = porcentaje_desviacion
 # Suponiendo que deseas agregar las últimas cuatro columnas de data a empleados
 empleados = pd.concat([empleados, data.iloc[:, -5:]], axis=1)
+togroupby = empleados.iloc[:, -5:].columns
+try:
+    # Definir grupos según el tipo de afinidad
+    grupos_afinidad = empleados.groupby([np.array(togroupby)])
 
-# Definir grupos según el tipo de afinidad
-grupos_afinidad = empleados.groupby(['Facturación_Above_CI', 'Sistemas_Above_CI', 'Producción_Above_CI', 'Mantenimiento_Above_CI', 'Recursos humanos_Above_CI'])
+    # Inicializar diccionarios para almacenar estadísticas
+    estadisticas_por_grupo = {
+        'Cantidad de trabajadores': [],
+        'Edad promedio': [],
+        'Experiencia promedio (años)': [],
+        'Edad mínima': [],
+        'Edad máxima': [],
+        'Empleados': []  # Agregar una nueva lista para almacenar los empleados de cada grupo
+    }
 
-# Inicializar diccionarios para almacenar estadísticas
-estadisticas_por_grupo = {
-    'Cantidad de trabajadores': [],
-    'Edad promedio': [],
-    'Experiencia promedio (años)': [],
-    'Edad mínima': [],
-    'Edad máxima': [],
-    'Empleados': []  # Agregar una nueva lista para almacenar los empleados de cada grupo
-}
+    # Calcular las estadísticas para cada grupo
+    for nombre_grupo, grupo in grupos_afinidad:
+        estadisticas_por_grupo['Cantidad de trabajadores'].append(len(grupo))
+        estadisticas_por_grupo['Edad promedio'].append(grupo['Edad'].mean())
+        estadisticas_por_grupo['Experiencia promedio (años)'].append(grupo['Experiencia (años)'].mean())
+        estadisticas_por_grupo['Edad mínima'].append(grupo['Edad'].min())
+        estadisticas_por_grupo['Edad máxima'].append(grupo['Edad'].max())
+        estadisticas_por_grupo['Empleados'].append(list(grupo['Nombre']))  # Agregar la lista de empleados
 
-# Calcular las estadísticas para cada grupo
-for nombre_grupo, grupo in grupos_afinidad:
-    estadisticas_por_grupo['Cantidad de trabajadores'].append(len(grupo))
-    estadisticas_por_grupo['Edad promedio'].append(grupo['Edad'].mean())
-    estadisticas_por_grupo['Experiencia promedio (años)'].append(grupo['Experiencia (años)'].mean())
-    estadisticas_por_grupo['Edad mínima'].append(grupo['Edad'].min())
-    estadisticas_por_grupo['Edad máxima'].append(grupo['Edad'].max())
-    estadisticas_por_grupo['Empleados'].append(list(grupo['Nombre']))  # Agregar la lista de empleados
-
-# Convertir a DataFrame para mostrar las estadísticas
-estadisticas_df = pd.DataFrame(estadisticas_por_grupo)
-estadisticas_df.index = [str(index) for index in grupos_afinidad.groups.keys()]
+    # Convertir a DataFrame para mostrar las estadísticas
+    estadisticas_df = pd.DataFrame(estadisticas_por_grupo)
+    estadisticas_df.index = [str(index) for index in grupos_afinidad.groups.keys()]
+except:
+    pass
 
 areas_trabajo = areas_oficina.iloc[:,1:].columns
-
-# Mapear los valores de los clusters a colores específicos
-color_map = {"Facturación": 'red', "Sistemas": 'blue', "Producción": 'green', "Mantenimiento": 'yellow', "Recursos humanos": 'purple'}
 
 # Crear una nueva columna 'Color' en tu DataFrame que contenga los colores correspondientes a cada cluster
 empleados['Color'] = empleados['Área de trabajo'].map(color_map)
@@ -269,8 +319,8 @@ areas_trabajo_seleccionadas = st.sidebar.multiselect('Áreas de trabajo', areas_
 empleados_filtrados = empleados.copy()
 if nombre_busqueda:
     empleados_filtrados = empleados_filtrados[empleados_filtrados['Nombre'].isin(nombre_busqueda)]
-empleados_filtrados = empleados_filtrados[(empleados_filtrados['Experiencia (años)'] >= experiencia_minima) & 
-                                        (empleados_filtrados['Experiencia (años)'] <= experiencia_maxima)]
+empleados_filtrados = empleados_filtrados[(empleados_filtrados['Experiencia (años)'].astype(int) >= experiencia_minima) & 
+                                        (empleados_filtrados['Experiencia (años)'].astype(int) <= experiencia_maxima)]
 if areas_trabajo_seleccionadas:
     empleados_filtrados = empleados_filtrados[empleados_filtrados['Área de trabajo'].isin(areas_trabajo_seleccionadas)]
 
@@ -300,7 +350,6 @@ recortado = empleados_filtrados.columns[:36].tolist() + empleados_filtrados.colu
 with tab1:
     st.subheader("Datos")
     st.table(empleados_filtrados[recortado])
-
 
 # Mostrar grafico de conocimientos
 with tab2:
@@ -347,7 +396,7 @@ with tab3:
             # Crear una nueva columna en empleados y asignar los valores correspondientes de producto_punto
             afinidades.append(valores_producto_punto.values[0])
         # Definir los nombres de las características
-        feature_names = ['Facturación', 'Sistemas', 'Producción', 'Mantenimiento', 'Recursos humanos']
+        feature_names = areas_oficina['Área de trabajo'].unique()
 
         # Nivel de confianza (95%)
         alpha = 0.05
@@ -383,8 +432,12 @@ with tab3:
 
         # Encontrar el índice donde se encuentra el valor 1
         indice = np.where(np.array(puesto) == 1)[0]
-        # Mapear los valores de los clusters a colores específicos
-        color_maped = {"0": 'red', "1": 'blue', "2": 'green', "3": 'yellow', "4": 'purple'}
+
+        # Crear el diccionario de mapeo de colores
+        color_maped = {str(i): colores[i] for i in range(len(colores))}
+
+        # # Mapear los valores de los clusters a colores específicos
+        # color_maped = {"0": 'red', "1": 'blue', "2": 'green', "3": 'yellow', "4": 'purple'}
 
         # Crear el gráfico de dispersión 3D con Plotly utilizando la columna 'Color' como colores de los marcadores
         fig_pred = go.Figure()
