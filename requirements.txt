@@ -7,4 +7,4 @@ matplotlib-inline==0.1.3
 plotly
 scipy
 openpyxl
-google.oauth2
+google-auth
