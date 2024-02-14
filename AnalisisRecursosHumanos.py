@@ -18,7 +18,7 @@ SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
 KEY = st.secrets["google_sheets_creds"] 
 SPREADSHEET_ID = '1VmL3MzzXOCarN9YRpHRCVdowd1jUR51SmLGxHH_K1Aw'
 
-creds = service_account.Credentials.from_service_account_file(KEY, scopes=SCOPES)
+creds = service_account.Credentials.from_service_account_info(KEY, scopes=SCOPES)
 service = build('sheets', 'v4', credentials=creds)
 
 # Define la función para obtener los datos de la hoja de cálculo
