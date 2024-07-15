@@ -1,6 +1,6 @@
 streamlit
 pandas
-numpy
+numpy==1.19.3
 scikit-learn
 matplotlib==3.6.0
 matplotlib-inline==0.1.3
